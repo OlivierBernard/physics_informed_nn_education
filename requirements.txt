@@ -1,0 +1,9 @@
+# --------- pytorch --------- #
+torch
+torchvision
+torchmetrics
+
+# --------- others --------- #
+pre-commit      # hooks for applying linters on commit
+matplotlib
+SimpleITK
