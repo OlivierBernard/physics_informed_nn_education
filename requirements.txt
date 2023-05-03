@@ -5,5 +5,7 @@ torchmetrics
 
 # --------- others --------- #
 pre-commit      # hooks for applying linters on commit
-matplotlib
-SimpleITK
+matplotlib      # plotting
+SimpleITK       # read/write io for data
+mat73           # read/write Matlab v7.3 .mat files
+einops          # useful tensor/array operations
