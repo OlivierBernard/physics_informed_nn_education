@@ -1,12 +1,20 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.utils.data as thdat
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def np_to_th(x):
+def np_to_th(x: np.ndarray) -> torch.Tensor:
+    """Convert numpy data to torch.Tensor with the selected DEVICE (cpu or gpu).
+
+    Args:
+        x: Numpy data.
+
+    Returns:
+        Converted torch.Tensor data.
+    """
     n_samples = len(x)
     return torch.from_numpy(x).to(torch.float).to(DEVICE).reshape(n_samples, -1)
 
@@ -88,8 +96,6 @@ class NetDiscovery(Net):
         loss2=None,
         loss2_weight=0.1,
     ) -> None:
-        super().__init__(
-            input_dim, output_dim, n_units, epochs, loss, lr, loss2, loss2_weight
-        )
+        super().__init__(input_dim, output_dim, n_units, epochs, loss, lr, loss2, loss2_weight)
 
-        self.r = nn.Parameter(data=torch.tensor([0.]))
+        self.r = nn.Parameter(data=torch.tensor([0.0]))
