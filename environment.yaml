@@ -23,7 +23,6 @@ channels:
 dependencies:
   - pytorch
   - torchvision
-  - matplotlib
   - torchmetrics=0.*
   - pre-commit=3.*
 
