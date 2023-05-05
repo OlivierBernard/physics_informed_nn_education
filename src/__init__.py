@@ -45,8 +45,10 @@ def setup_root(
         dotenv (bool, optional): Whether to load `.env` file.
         pythonpath (bool, optional): Whether to add project root to pythonpath.
         cwd (bool, optional): Whether to set current working directory to project root.
+
     Raises:
         FileNotFoundError: If root is not found.
+
     Returns:
         Path: Path to project root.
     """
