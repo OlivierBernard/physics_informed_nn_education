@@ -4,10 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from src import setup_root
-
-setup_root()
-
 from src.models.components.layers import get_nn_module
 
 
