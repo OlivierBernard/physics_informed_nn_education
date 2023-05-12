@@ -31,7 +31,7 @@ class MLP(nn.Module):
         hidden: Optional[Sequence[int]] = (128,),
         activation: str = "ReLU",
         output_activation: Optional[str] = None,
-        dropout: float = 0.25,
+        dropout: float = 0,
     ):
         super().__init__()
         self.input_shape = input_shape
@@ -64,4 +64,9 @@ class MLP(nn.Module):
         x = torch.flatten(x, start_dim=1)
         x = self.net(x)
         x = torch.reshape(x, (-1, *self.output_shape))
-        return
+        return x
+
+
+if __name__ == "__main__":
+    mlp = MLP(3, 2, [16, 16])
+    print(mlp)
