@@ -66,6 +66,7 @@ class PINNs_cooling_law(nn.Module):
         return self.mlp(x)
 
     def physical_loss(self, x: torch.Tensor, device) -> torch.Tensor:
+        """Compute physical loss."""
         # Define the full time axis of interest
         # Set requires_grad to True to be able to compute the gradients w.r.t. input
         x = x.requires_grad_(True).to(device)
