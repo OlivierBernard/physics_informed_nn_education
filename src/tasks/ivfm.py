@@ -38,19 +38,19 @@ preds_array = np.zeros([2, *data["uR"].shape])
 
 for frame in range(nb_frame - 1):
     # Get radial and angular velocity
-    uR = data["uR"][..., 0]
-    uTH = data["uTH"][..., 0]
+    uR = data["uR"][..., frame]
+    uTH = data["uTH"][..., frame]
 
     # Get left ventricle mask
     lv_seg = (~np.isnan(uR)).astype(np.uint8)
 
     # Get boundary points' coordinates
-    nR_wall = data["nR_wall"][..., 0]
-    nTH_wall = data["nTH_wall"][..., 0]
+    nR_wall = data["nR_wall"][..., frame]
+    nTH_wall = data["nTH_wall"][..., frame]
 
     # Get boundary points' velocities
-    uR_wall = data["uR_wall"][..., 0]
-    uTH_wall = data["uTH_wall"][..., 0]
+    uR_wall = data["uR_wall"][..., frame]
+    uTH_wall = data["uTH_wall"][..., frame]
 
     # Get sampling grid
     grid_R = data["grid_R"]
