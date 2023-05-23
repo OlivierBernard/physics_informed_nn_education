@@ -19,7 +19,6 @@ torch.manual_seed(12345)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(12345)
 
-
 # Create data
 patient = "../../data/patient_06_1.mat"
 data = loadmat(patient)
@@ -29,6 +28,10 @@ spacing = [0.5, 0.5, 1]
 # Create log folder
 save_dir = os.path.join("../../logs", "iVFM")
 os.makedirs(save_dir, exist_ok=True)
+
+# Weights for losses
+lambda_div = 1
+lambda_BC = 1
 
 nb_frame = data["uR"].shape[-1]
 preds_array = np.zeros([2, *data["uR"].shape])
@@ -87,7 +90,9 @@ for frame in range(nb_frame - 1):
     epochs = 20000
 
     # Create the PINNs model
-    pinn = PINNs_ivfm(mlp, epochs=epochs, optimizer=optimizer)
+    pinn = PINNs_ivfm(
+        mlp, epochs=epochs, optimizer=optimizer, lamda_div=lambda_div, lambda_BC=lambda_BC
+    )
     losses = pinn.optimize(batch, DEVICE)
 
     # Inference
