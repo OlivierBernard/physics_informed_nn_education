@@ -19,6 +19,8 @@ class PINNs_ivfm(nn.Module):
         loss: nn.Module = nn.L1Loss(),
         optimizer: torch.optim.Optimizer = partial(torch.optim.Adam, lr=1e-3),
         physical_loss: bool = True,
+        lambda_div: float = 1,
+        lambda_BC: float = 1,
     ) -> None:
         """Initialize class instance.
 
@@ -27,9 +29,9 @@ class PINNs_ivfm(nn.Module):
             epochs: Number of epochs.
             loss: Reconstruction loss function.
             optimizer: Optimizer.
-            loss2: Optional regularization term.
-            loss2_weight: Regularization weight.
             physical_loss: Whether to use physical loss.
+            lambda_div: Weight for free divergence residual loss.
+            lambda_BC: Weight for boundary condition residual loss.
         """
         super().__init__()
 
@@ -38,8 +40,8 @@ class PINNs_ivfm(nn.Module):
         self.loss = loss
         self.mlp = mlp
         self.optimizer = optimizer(self.mlp.parameters())
-        self.lambda_div = 1  # Weight for divergence residual
-        self.lambda_BC = 1  # Weight for boundary residual
+        self.lambda_div = lambda_div  # Weight for divergence residual
+        self.lambda_BC = lambda_BC  # Weight for boundary residual
         self.do_phy_loss = physical_loss
 
     def np_to_th(self, x: np.ndarray, device: torch.device) -> torch.Tensor:
