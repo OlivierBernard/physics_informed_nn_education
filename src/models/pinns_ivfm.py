@@ -21,6 +21,7 @@ class PINNs_ivfm(nn.Module):
         physical_loss: bool = True,
         lambda_div: float = 1,
         lambda_BC: float = 1,
+        lambda_smooth: float = 1,
     ) -> None:
         """Initialize class instance.
 
@@ -32,6 +33,7 @@ class PINNs_ivfm(nn.Module):
             physical_loss: Whether to use physical loss.
             lambda_div: Weight for free divergence residual loss.
             lambda_BC: Weight for boundary condition residual loss.
+            lambda_smooth: Weight for smoothing regularization.
         """
         super().__init__()
 
@@ -42,6 +44,7 @@ class PINNs_ivfm(nn.Module):
         self.optimizer = optimizer(self.mlp.parameters())
         self.lambda_div = lambda_div  # Weight for divergence residual
         self.lambda_BC = lambda_BC  # Weight for boundary residual
+        self.lambda_smooth = lambda_smooth  # Weight for smoothing regularization
         self.do_phy_loss = physical_loss
 
     def np_to_th(self, x: np.ndarray, device: torch.device) -> torch.Tensor:
@@ -62,10 +65,12 @@ class PINNs_ivfm(nn.Module):
 
     def physical_loss(self, batch: dict[str, torch.Tensor], device) -> torch.Tensor:
         """Compute physical loss."""
-        grid_R = torch.from_numpy(batch["grid_R"]).float().requires_grad_(True).to(device)
-        grid_TH = torch.from_numpy(batch["grid_TH"]).float().requires_grad_(True).to(device)
+        grid_R = self.np_to_th(batch["grid_R"], device).requires_grad_(True)
+        grid_TH = self.np_to_th(batch["grid_TH"], device).requires_grad_(True)
+        # uD = self.np_to_th(batch["uD"], device)
 
-        x = torch.stack((grid_R, grid_TH), dim=1)
+        x = torch.hstack((grid_R, grid_TH))
+        # x = torch.hstack((grid_R, grid_TH, uD))
 
         # Compute the corresponding estimated velocities
         preds = self.forward(x)
@@ -73,17 +78,40 @@ class PINNs_ivfm(nn.Module):
         uTH = preds[:, -1:]
 
         # Compute the divergence
-        rdiv = grid_R * grad(uR, grid_R, order=1) + uR + grad(uTH, grid_TH, order=1)
+        uR_dr = grad(uR, grid_R, order=1, create_graph=True)
+        uTH_dth = grad(uTH, grid_TH, order=1, create_graph=True)
+        rdiv = grid_R * uR_dr + uR + uTH_dth
+
+        # Smoothing regularization
+        if self.lambda_smooth:
+            uR_dr_dr = grad(uR_dr, grid_R, order=1, create_graph=True)
+            uTH_dth_dth = grad(uTH_dth, grid_TH, order=1, create_graph=True)
+            uTH_dr_dr = grad(uTH, grid_R, order=2)
+            uR_dth_dth = grad(uR, grid_TH, order=2)
+            uR_dth = grad(uR, grid_TH, order=1, create_graph=True)
+            uR_dth_dr = grad(uR_dth, grid_R, order=1, create_graph=True)
+            uTH_dth_dr = grad(uTH_dth, grid_R, order=1, create_graph=True)
+
+            res_smooth = (
+                (grid_R * grid_R * uR_dr_dr) ** 2
+                + 2 * (grid_R * uR_dth_dr) ** 2
+                + uR_dth_dth**2
+                + (grid_R * grid_R * uTH_dr_dr) ** 2
+                + 2 * (grid_R * uTH_dth_dr) ** 2
+                + uTH_dth_dth**2
+            )
 
         # Compute residual of boundary points
-        grid_R_wall = torch.from_numpy(batch["grid_R_wall"]).float().to(device)
-        grid_TH_wall = torch.from_numpy(batch["grid_TH_wall"]).float().to(device)
-        x_wall = torch.stack((grid_R_wall, grid_TH_wall), dim=1)
+        grid_R_wall = self.np_to_th(batch["grid_R_wall"], device).requires_grad_(True)
+        grid_TH_wall = self.np_to_th(batch["grid_TH_wall"], device).requires_grad_(True)
+        # uD_wall = self.np_to_th(batch["uD_wall"], device)
+        # x_wall = torch.hstack((grid_R_wall, grid_TH_wall, uD_wall))
+        x_wall = torch.hstack((grid_R_wall, grid_TH_wall))
 
-        nR_wall = torch.from_numpy(batch["nR_wall"]).float().to(device)
-        nTH_wall = torch.from_numpy(batch["nTH_wall"]).float().to(device)
-        uR_wall_ref = torch.from_numpy(batch["uR_wall"]).float().to(device)
-        uTH_wall_ref = torch.from_numpy(batch["uTH_wall"]).float().to(device)
+        nR_wall = self.np_to_th(batch["nR_wall"], device).requires_grad_(True)
+        nTH_wall = self.np_to_th(batch["nTH_wall"], device).requires_grad_(True)
+        uR_wall_ref = self.np_to_th(batch["uR_wall"], device).requires_grad_(True)
+        uTH_wall_ref = self.np_to_th(batch["uTH_wall"], device).requires_grad_(True)
 
         u_wall = self.forward(x_wall)
         uR_wall = u_wall[:, :-1]
@@ -91,7 +119,16 @@ class PINNs_ivfm(nn.Module):
 
         res_BC = (uR_wall - uR_wall_ref) * nR_wall + (uTH_wall - uTH_wall_ref) * nTH_wall
 
-        return torch.mean(torch.abs(rdiv)), torch.mean(torch.abs(res_BC))
+        if self.lambda_smooth:
+            return (
+                self.loss(rdiv, torch.zeros_like(rdiv)),
+                self.loss(res_BC, torch.zeros_like(res_BC)),
+                self.loss(res_smooth, torch.zeros_like(res_smooth)),
+            )
+        else:
+            return self.loss(rdiv, torch.zeros_like(rdiv)), self.loss(
+                res_BC, torch.zeros_like(res_BC)
+            )
 
     def optimize(self, batch: dict[str, torch.Tensor], device: torch.device) -> list[float]:
         """Training loop.
@@ -104,8 +141,11 @@ class PINNs_ivfm(nn.Module):
             List of losses over epochs.
         """
         # Prepare training input and reference
+        # x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"], batch["uD"]), axis=1), device)
         x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"]), axis=1), device)
-        u_ref = self.np_to_th(np.stack((batch["uR"], batch["uTH"]), axis=1), device)
+        uD = self.np_to_th(batch["uD"], device)
+        # powers = self.np_to_th(batch["powers"], device)
+        # u_ref = self.np_to_th(np.stack((batch["uR"], batch["uTH"]), axis=1), device)
 
         # Put torch layers (batchnorm/dropout etc.) in training mode.
         self.train()
@@ -120,12 +160,22 @@ class PINNs_ivfm(nn.Module):
             self.optimizer.zero_grad()
             # Apply the forward pass
             outputs = self.forward(x)
-            # Compute the corresponding loss value based on the predicted outputs
-            loss = self.loss(outputs, u_ref)
-            # Update the loss value if an additional loss is defined
+            # Compute the reconstruction loss
+            # loss = self.loss(powers * outputs, powers * u_ref) #+ self.loss(outputs[:, :-1], - uD)
+            loss = self.loss(outputs[:, :-1], -uD)
+            # Update the loss value if additional losses are requested
             if self.do_phy_loss:
-                res_div, res_BC = self.physical_loss(batch, device)
-                final_loss = loss + self.lambda_div * res_div + self.lambda_BC * res_BC
+                if self.lambda_smooth:
+                    res_div, res_BC, res_smooth = self.physical_loss(batch, device)
+                    final_loss = (
+                        loss
+                        + self.lambda_div * res_div
+                        + self.lambda_BC * res_BC
+                        + self.lambda_smooth * res_smooth
+                    )
+                else:
+                    res_div, res_BC = self.physical_loss(batch, device)
+                    final_loss = loss + self.lambda_div * res_div + self.lambda_BC * res_BC
             else:
                 final_loss = loss
             # Compute the backward pass
@@ -138,6 +188,8 @@ class PINNs_ivfm(nn.Module):
             pbar_metrics["res_recon"] = loss.item()
             pbar_metrics["residual_div"] = res_div.item()
             pbar_metrics["residual_BC"] = res_BC.item()
+            if self.lambda_smooth:
+                pbar_metrics["residual_smooth"] = res_smooth.item()
             fit_pbar.set_postfix(pbar_metrics)
             # Store the value of the loss function
             losses.append(final_loss.item())
@@ -147,6 +199,7 @@ class PINNs_ivfm(nn.Module):
 
     def predict(self, batch: dict[str, torch.Tensor], device: torch.device) -> torch.Tensor:
         """Prediction loop."""
+        # x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"], batch["uD"]), axis=1), device)
         x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"]), axis=1), device)
         # Put torch layers (batchnorm/dropout etc.) in evaluation mode.
         self.eval()
