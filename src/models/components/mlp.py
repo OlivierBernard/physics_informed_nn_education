@@ -48,8 +48,14 @@ class MLP(nn.Module):
         self.net.add_module("layer_in", nn.Linear(input_dim, layers[0]))
 
         # Hidden layers
+        if activation.lower() == "tanh":
+            activation = "Tanh"
+        elif activation.lower() == "sigmoid":
+            activation = "Sigmoid"
+        else:
+            activation = activation.lower()
         for i in range(0, len(layers) - 1):
-            self.net.add_module(f"{activation.lower()}_{i}", get_nn_module(activation))
+            self.net.add_module(f"{activation}_{i}", get_nn_module(activation))
             if dropout:
                 self.net.add_module(f"drop_{i}", nn.Dropout(p=dropout))
             self.net.add_module(f"layer_{i+1}", nn.Linear(layers[i], layers[i + 1]))
@@ -60,11 +66,20 @@ class MLP(nn.Module):
                 f"{output_activation.lower()}_out", get_nn_module(output_activation)
             )
 
+        self.apply(self.initialize_weights)
+
     def forward(self, x: torch.Tensor):  # noqa D102
         x = torch.flatten(x, start_dim=1)
         x = self.net(x)
         x = torch.reshape(x, (-1, *self.output_shape))
         return x
+
+    def initialize_weights(self, module: nn.Module) -> None:
+        """Initialize the weights of all nn Modules using Kaimimg normal initialization."""
+        if isinstance(module, (nn.Linear)):
+            module.weight = nn.init.kaiming_normal_(module.weight, a=0)
+            if module.bias is not None:
+                module.bias = nn.init.constant_(module.bias, 0)
 
 
 if __name__ == "__main__":
