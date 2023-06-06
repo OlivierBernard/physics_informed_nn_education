@@ -34,14 +34,15 @@ save_dir = os.path.join("../../logs", "iVFM")
 os.makedirs(save_dir, exist_ok=True)
 
 # Weights for losses
-lambda_div = 1e-4
-lambda_BC = 1
-lambda_smooth = 1e-5
+lambda_div = 1e-3
+lambda_BC = 1e-2
+lambda_smooth = 1e-4
+# lambda_div = torch.nn.parameter.Parameter(torch.Tensor([1.0]))
+# lambda_BC = torch.nn.parameter.Parameter(torch.Tensor([1.0]))
+# lambda_smooth = torch.nn.parameter.Parameter(torch.Tensor([1.0]))
 
 nb_frame = data["uR"].shape[-1]
 preds_array = np.zeros([2, *data["uR"].shape])
-
-# nb_frame = 1
 
 # Create an MLP network
 mlp = MLP([2], [2], [100, 100, 100, 100, 100, 100, 100, 100], activation="tanh")
@@ -50,7 +51,7 @@ mlp = MLP([2], [2], [100, 100, 100, 100, 100, 100, 100, 100], activation="tanh")
 lr = 1e-4
 optimizer = partial(torch.optim.Adam, lr=lr)
 # optimizer = partial(torch.optim.LBFGS, lr=2, max_iter=100000)
-epochs = 1000
+epochs = 20000
 
 # Create the PINNs model
 pinn = PINNs_ivfm(
@@ -66,6 +67,7 @@ nb_frame = 1
 for frame in range(nb_frame):
     # Get radial and angular velocity
     VNyquist = data["VNyquist"]
+    # Normalize Doppler power between 0 and 1
     powers = np.log10(data["powers"][..., frame]) / 2
     uD = data["uD"][..., frame] * VNyquist
     uR = data["uR"][..., frame]
@@ -131,4 +133,4 @@ for frame in range(nb_frame):
 # Save predicted velocities
 itk_image = sitk.GetImageFromArray(rearrange(preds_array, "c h w d ->  d h w c"))
 itk_image.SetSpacing(spacing)
-sitk.WriteImage(itk_image, os.path.join(save_dir, fname + "_test1.nii.gz"))
+sitk.WriteImage(itk_image, os.path.join(save_dir, fname + "_test.nii.gz"))

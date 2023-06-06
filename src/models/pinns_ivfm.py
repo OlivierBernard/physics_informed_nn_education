@@ -41,11 +41,18 @@ class PINNs_ivfm(nn.Module):
         self.epochs = epochs
         self.loss = loss
         self.mlp = mlp
-        self.optimizer = optimizer(self.mlp.parameters())
         self.lambda_div = lambda_div  # Weight for divergence residual
         self.lambda_BC = lambda_BC  # Weight for boundary residual
         self.lambda_smooth = lambda_smooth  # Weight for smoothing regularization
         self.do_phy_loss = physical_loss
+        self.optimizer = optimizer(self.mlp.parameters())
+        if isinstance(self.lambda_div, torch.nn.parameter.Parameter):
+            self.optimizer.add_param_group({"params": self.lambda_div})
+        if isinstance(self.lambda_BC, torch.nn.parameter.Parameter):
+            self.optimizer.add_param_group({"params": self.lambda_BC})
+        if isinstance(self.lambda_smooth, torch.nn.parameter.Parameter):
+            self.optimizer.add_param_group({"params": self.lambda_smooth})
+        self.relu = torch.nn.ReLU(inplace=False)
 
     def np_to_th(self, x: np.ndarray, device: torch.device) -> torch.Tensor:
         """Convert numpy data to torch.Tensor with the selected DEVICE (cpu or gpu).
@@ -67,10 +74,8 @@ class PINNs_ivfm(nn.Module):
         """Compute physical loss."""
         grid_R = self.np_to_th(batch["grid_R"], device).requires_grad_(True)
         grid_TH = self.np_to_th(batch["grid_TH"], device).requires_grad_(True)
-        # uD = self.np_to_th(batch["uD"], device)
 
         x = torch.hstack((grid_R, grid_TH))
-        # x = torch.hstack((grid_R, grid_TH, uD))
 
         # Compute the corresponding estimated velocities
         preds = self.forward(x)
@@ -141,11 +146,9 @@ class PINNs_ivfm(nn.Module):
             List of losses over epochs.
         """
         # Prepare training input and reference
-        # x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"], batch["uD"]), axis=1), device)
         x = self.np_to_th(np.stack((batch["grid_R"], batch["grid_TH"]), axis=1), device)
         uD = self.np_to_th(batch["uD"], device)
         # powers = self.np_to_th(batch["powers"], device)
-        # u_ref = self.np_to_th(np.stack((batch["uR"], batch["uTH"]), axis=1), device)
 
         # Put torch layers (batchnorm/dropout etc.) in training mode.
         self.train()
@@ -158,10 +161,15 @@ class PINNs_ivfm(nn.Module):
             # since the call to the backward function will automatically compute
             # the NN gradients
             self.optimizer.zero_grad()
+            if isinstance(self.lambda_div, torch.nn.parameter.Parameter):
+                self.lambda_div.data = self.relu(self.lambda_div)
+            if isinstance(self.lambda_BC, torch.nn.parameter.Parameter):
+                self.lambda_BC.data = self.relu(self.lambda_BC)
+            if self.lambda_smooth and isinstance(self.lambda_smooth, torch.nn.parameter.Parameter):
+                self.lambda_smooth.data = self.relu(self.lambda_smooth)
             # Apply the forward pass
             outputs = self.forward(x)
             # Compute the reconstruction loss
-            # loss = self.loss(powers * outputs, powers * u_ref) #+ self.loss(outputs[:, :-1], - uD)
             loss = self.loss(outputs[:, :-1], -uD)
             # Update the loss value if additional losses are requested
             if self.do_phy_loss:
